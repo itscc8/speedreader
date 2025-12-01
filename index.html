@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Focus Speed Reader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+      rel="stylesheet"
+    />
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              dark: {
+                900: '#0f172a', // Slate 900
+                800: '#1e293b', // Slate 800
+                700: '#334155', // Slate 700
+              },
+              brand: {
+                DEFAULT: '#3b82f6', // Blue 500
+                hover: '#2563eb', // Blue 600
+                glow: 'rgba(59, 130, 246, 0.5)',
+              },
+            },
+            fontFamily: {
+              mono: ['"Courier New"', 'Courier', 'monospace'],
+              sans: ['Inter', 'system-ui', 'sans-serif'],
+            },
+          },
+        },
+      }
+    </script>
+    <style>
+      body {
+          background-color: #0f172a;
+          color: #e2e8f0;
+          font-family: 'Inter', sans-serif;
+          overflow: hidden; /* Prevent scrolling during read */
+      }
+
+      /* Custom Scrollbar for the textarea */
+      textarea::-webkit-scrollbar {
+          width: 8px;
+      }
+      textarea::-webkit-scrollbar-track {
+          background: #1e293b;
+      }
+      textarea::-webkit-scrollbar-thumb {
+          background: #334155;
+          border-radius: 4px;
+      }
+      textarea::-webkit-scrollbar-thumb:hover {
+          background: #475569;
+      }
+
+      /* Range Slider Styling */
+      input[type=range] {
+          -webkit-appearance: none;
+          background: transparent;
+      }
+      input[type=range]::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          height: 20px;
+          width: 20px;
+          border-radius: 50%;
+          background: #3b82f6;
+          cursor: pointer;
+          margin-top: -8px;
+          box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+      }
+      input[type=range]::-webkit-slider-runnable-track {
+          width: 100%;
+          height: 4px;
+          cursor: pointer;
+          background: #334155;
+          border-radius: 2px;
+      }
+
+      .word-container {
+          position: relative;
+      }
+
+      /* The specific focus guides */
+      .focus-guide {
+          position: absolute;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 2px;
+          height: 20px;
+          background-color: #3b82f6;
+          opacity: 0.3;
+      }
+      .focus-guide.top { top: -25px; }
+      .focus-guide.bottom { bottom: -25px; }
+    </style>
+  </head>
+  <body class="h-screen flex flex-col items-center justify-center">
+    <!-- APP CONTAINER -->
+    <div class="w-full max-w-4xl p-6 h-full flex flex-col">
+      <!-- HEADER -->
+      <header
+        class="flex justify-between items-center mb-8 border-b border-gray-800 pb-4"
+      >
+        <h1 class="text-2xl font-bold tracking-tight text-white">
+          <i class="fa-solid fa-bolt text-brand mr-2"></i>Speed<span
+            class="text-brand"
+            >Reader</span
+          >
+        </h1>
+        <div class="text-sm text-gray-400">
+          <span id="state-indicator">Configuration</span>
+        </div>
+      </header>
+
+      <!-- INPUT VIEW -->
+      <div
+        id="input-view"
+        class="flex-1 flex flex-col gap-6 transition-all duration-300"
+      >
+        <div
+          class="flex-1 bg-dark-800 rounded-xl p-1 shadow-lg border border-gray-700 hover:border-brand transition-colors"
+        >
+          <textarea
+            id="text-input"
+            class="w-full h-full bg-transparent text-gray-200 p-6 text-lg focus:outline-none resize-none placeholder-gray-600"
+            placeholder="Paste your text here to begin speed reading..."
+          ></textarea>
+        </div>
+
+        <!-- Settings Bar -->
+        <div
+          class="bg-dark-800 p-6 rounded-xl border border-gray-700 flex flex-col md:flex-row items-center gap-6 justify-between"
+        >
+          <div class="flex items-center gap-4 w-full md:w-2/3">
+            <div class="text-gray-400 font-medium whitespace-nowrap">
+              Speed (WPM)
+            </div>
+            <input
+              type="range"
+              id="wpm-input-slider"
+              min="100"
+              max="1000"
+              step="10"
+              value="500"
+              class="w-full"
+            />
+            <div
+              class="w-16 text-center font-mono text-brand font-bold text-xl"
+              id="wpm-display-value"
+            >
+              500
+            </div>
+          </div>
+
+          <button
+            onclick="startReader()"
+            class="w-full md:w-auto px-8 py-3 bg-brand hover:bg-brand-hover text-white font-bold rounded-lg shadow-lg shadow-brand/20 transform active:scale-95 transition-all flex items-center justify-center gap-2"
+          >
+            <i class="fa-solid fa-play"></i> Start Reading
+          </button>
+        </div>
+      </div>
+
+      <!-- READER VIEW (Hidden by default) -->
+      <div
+        id="reader-view"
+        class="hidden flex-1 flex flex-col justify-between py-10"
+      >
+        <!-- Progress Bar -->
+        <div class="w-full bg-dark-700 h-2 rounded-full overflow-hidden mb-12">
+          <div
+            id="progress-bar"
+            class="bg-brand h-full w-0 transition-all duration-300 ease-out"
+          ></div>
+        </div>
+
+        <!-- Main Word Display -->
+        <div
+          class="flex-1 flex items-center justify-center relative word-container"
+        >
+          <!-- Focus Guides (Optional visual aids) -->
+          <div class="focus-guide top"></div>
+          <div class="focus-guide bottom"></div>
+
+          <div
+            id="word-display"
+            class="text-6xl md:text-8xl font-bold text-white text-center leading-tight select-none"
+            style="text-shadow: 0 0 20px rgba(0,0,0,0.5);"
+          >
+            Ready?
+          </div>
+        </div>
+
+        <!-- Info Stats -->
+        <div class="text-center text-gray-500 font-mono mb-8">
+          <span id="current-word-index">0</span> /
+          <span id="total-word-count">0</span>
+        </div>
+
+        <!-- Controls -->
+        <div class="bg-dark-800 p-6 rounded-xl border border-gray-700">
+          <div
+            class="flex flex-col md:flex-row items-center justify-between gap-6"
+          >
+            <!-- Playback Controls -->
+            <div class="flex items-center gap-4">
+              <button
+                onclick="stopReader()"
+                class="p-3 text-gray-400 hover:text-white hover:bg-dark-700 rounded-lg transition-colors"
+                title="Edit Text"
+              >
+                <i class="fa-solid fa-pen-to-square"></i>
+              </button>
+              <button
+                onclick="rewind(10)"
+                class="p-3 text-gray-400 hover:text-white hover:bg-dark-700 rounded-lg transition-colors"
+                title="Back 10 Words"
+              >
+                <i class="fa-solid fa-rotate-left"></i>
+              </button>
+              <button
+                id="play-pause-btn"
+                onclick="togglePlay()"
+                class="w-14 h-14 bg-brand hover:bg-brand-hover text-white rounded-full flex items-center justify-center shadow-lg shadow-brand/20 transition-all active:scale-95"
+              >
+                <i class="fa-solid fa-pause text-xl"></i>
+              </button>
+              <button
+                onclick="restart()"
+                class="p-3 text-gray-400 hover:text-white hover:bg-dark-700 rounded-lg transition-colors"
+                title="Restart"
+              >
+                <i class="fa-solid fa-rotate-right"></i>
+              </button>
+            </div>
+
+            <!-- Live Speed Control -->
+            <div class="flex items-center gap-4 w-full md:w-1/2">
+              <i class="fa-solid fa-gauge-high text-gray-500"></i>
+              <input
+                type="range"
+                id="wpm-reader-slider"
+                min="100"
+                max="1000"
+                step="10"
+                value="500"
+                class="w-full"
+              />
+              <span class="font-mono text-brand w-12" id="wpm-reader-display"
+                >500</span
+              >
+            </div>
+          </div>
+          <div class="text-center mt-4 text-xs text-gray-600">
+            Press
+            <span class="bg-dark-700 px-1 rounded text-gray-400">Space</span> to
+            Pause/Play •
+            <span class="bg-dark-700 px-1 rounded text-gray-400">←</span> to
+            Rewind
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // State
+      let words = []
+      let currentIndex = 0
+      let wpm = 500
+      let isPlaying = false
+      let timer = null
+
+      // DOM Elements
+      const inputView = document.getElementById('input-view')
+      const readerView = document.getElementById('reader-view')
+      const textInput = document.getElementById('text-input')
+      const wordDisplay = document.getElementById('word-display')
+      const progressBar = document.getElementById('progress-bar')
+      const playPauseBtn = document.getElementById('play-pause-btn')
+      const stateIndicator = document.getElementById('state-indicator')
+
+      // Counters
+      const currentWordIndexEl = document.getElementById('current-word-index')
+      const totalWordCountEl = document.getElementById('total-word-count')
+
+      // Sliders
+      const inputSlider = document.getElementById('wpm-input-slider')
+      const readerSlider = document.getElementById('wpm-reader-slider')
+      const inputDisplay = document.getElementById('wpm-display-value')
+      const readerDisplay = document.getElementById('wpm-reader-display')
+
+      // --- Initialization & Syncing ---
+
+      function updateSpeed(newWpm) {
+        wpm = parseInt(newWpm)
+        inputSlider.value = wpm
+        readerSlider.value = wpm
+        inputDisplay.innerText = wpm
+        readerDisplay.innerText = wpm
+
+        // If playing, restart the timer with new speed immediately
+        if (isPlaying) {
+          clearTimeout(timer)
+          loop()
+        }
+      }
+
+      inputSlider.addEventListener('input', (e) => updateSpeed(e.target.value))
+      readerSlider.addEventListener('input', (e) => updateSpeed(e.target.value))
+
+      // --- Core Logic ---
+
+      function startReader() {
+        const text = textInput.value.trim()
+        if (!text) {
+          alert('Please enter some text first!')
+          return
+        }
+
+        // Split text by whitespace (spaces, tabs, newlines)
+        words = text.split(/\s+/)
+        if (words.length === 0) return
+
+        // Switch Views
+        inputView.classList.add('hidden')
+        readerView.classList.remove('hidden')
+        stateIndicator.innerText = 'Focus Mode'
+
+        // Initialize Stats
+        totalWordCountEl.innerText = words.length
+        currentIndex = 0
+
+        // Start
+        isPlaying = true
+        updatePlayButton()
+        renderWord()
+        loop()
+      }
+
+      function stopReader() {
+        clearTimeout(timer)
+        isPlaying = false
+        inputView.classList.remove('hidden')
+        readerView.classList.add('hidden')
+        stateIndicator.innerText = 'Configuration'
+      }
+
+      function loop() {
+        if (!isPlaying) return
+
+        // Calculate delay based on WPM
+        // 60,000 ms in a minute / words per minute
+        const delay = 60000 / wpm
+
+        timer = setTimeout(() => {
+          if (currentIndex < words.length - 1) {
+            currentIndex++
+            renderWord()
+            loop()
+          } else {
+            // End of text
+            isPlaying = false
+            updatePlayButton()
+            wordDisplay.innerHTML = '<span class="text-brand">Done!</span>'
+          }
+        }, delay)
+      }
+
+      function renderWord() {
+        const word = words[currentIndex]
+        wordDisplay.innerText = word
+
+        // Highlight the center character (ORP - Optimal Recognition Point) logic could go here
+        // For now, simple text centering is used as requested.
+
+        // Update UI
+        currentWordIndexEl.innerText = currentIndex + 1
+        const progress = ((currentIndex + 1) / words.length) * 100
+        progressBar.style.width = `${progress}%`
+      }
+
+      function togglePlay() {
+        if (currentIndex >= words.length - 1) {
+          // If finished, restart logic
+          restart()
+          return
+        }
+
+        isPlaying = !isPlaying
+        updatePlayButton()
+
+        if (isPlaying) {
+          loop()
+        } else {
+          clearTimeout(timer)
+        }
+      }
+
+      function updatePlayButton() {
+        const icon = playPauseBtn.querySelector('i')
+        if (isPlaying) {
+          icon.classList.remove('fa-play')
+          icon.classList.add('fa-pause')
+          playPauseBtn.classList.add('bg-brand')
+          playPauseBtn.classList.remove('bg-green-600')
+        } else {
+          icon.classList.remove('fa-pause')
+          icon.classList.add('fa-play')
+          playPauseBtn.classList.remove('bg-brand')
+          playPauseBtn.classList.add('bg-green-600') // Green when paused to indicate "Go"
+        }
+      }
+
+      function restart() {
+        clearTimeout(timer)
+        currentIndex = 0
+        renderWord()
+        isPlaying = true
+        updatePlayButton()
+        loop()
+      }
+
+      function rewind(amount) {
+        clearTimeout(timer)
+        currentIndex = Math.max(0, currentIndex - amount)
+        renderWord()
+        // We pause on rewind to let user orient themselves, or we can keep playing?
+        // Let's keep playing if it was playing.
+        if (isPlaying) loop()
+      }
+
+      // --- Keyboard Shortcuts ---
+
+      document.addEventListener('keydown', (e) => {
+        if (readerView.classList.contains('hidden')) return
+
+        if (e.code === 'Space') {
+          e.preventDefault() // Prevent scrolling
+          togglePlay()
+        }
+        if (e.code === 'ArrowLeft') {
+          rewind(10) // Go back 10 words
+        }
+        if (e.code === 'ArrowRight') {
+          // Skip forward
+          clearTimeout(timer)
+          currentIndex = Math.min(words.length - 1, currentIndex + 10)
+          renderWord()
+          if (isPlaying) loop()
+        }
+      })
+    </script>
+  </body>
+</html>
